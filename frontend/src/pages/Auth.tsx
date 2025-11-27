@@ -8,28 +8,62 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Heart, Mail, Phone, ArrowLeft } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import { authApi } from "@/api/auth"; // <--- IMPORT THE NEW API FILE
 
 const Auth = () => {
   const navigate = useNavigate();
+  const [activeTab, setActiveTab] = useState("login");
   const [isOtpSent, setIsOtpSent] = useState(false);
-  const [contactMethod, setContactMethod] = useState<"email" | "phone">("email");
+  const [contactMethod, setContactMethod] = useState<"email" | "phone">("phone");
   const [userType, setUserType] = useState<"donor" | "orphanage" | "volunteer" | "admin">("donor");
+  
   const [contact, setContact] = useState("");
+  const [fullName, setFullName] = useState("");
   const [otp, setOtp] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSendOtp = (e: React.FormEvent) => {
+  // --- HANDLER: SEND OTP ---
+  const handleSendOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock OTP send - in real app, this would call backend
-    setIsOtpSent(true);
-    toast.success(`OTP sent to your ${contactMethod}`);
+    setIsLoading(true);
+
+    try {
+      // Use the clean API function
+      const data = await authApi.requestOtp(contact);
+      
+      setIsOtpSent(true);
+      toast.success("OTP sent successfully!");
+      
+      // Debug check for dev mode
+      if (data.debug_otp) {
+        console.log("Dev OTP:", data.debug_otp);
+        toast.info(`Dev OTP: ${data.debug_otp}`);
+      }
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.response?.data?.detail || "Failed to send OTP");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleVerifyOtp = (e: React.FormEvent) => {
+  // --- HANDLER: VERIFY OTP ---
+  const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock OTP verification - in real app, this would verify with backend
-    if (otp === "123456" || otp.length === 6) {
+    setIsLoading(true);
+
+    try {
+      // Use the clean API function
+      const data = await authApi.verifyOtp(
+        contact, 
+        otp, 
+        userType, 
+        activeTab === "signup" ? fullName : undefined
+      );
+
+      localStorage.setItem("access_token", data.access_token);
       toast.success("Login successful!");
-      // Navigate based on user type
+      
       const routes = {
         donor: "/donor-dashboard",
         orphanage: "/orphanage-dashboard",
@@ -37,8 +71,12 @@ const Auth = () => {
         admin: "/admin-dashboard"
       };
       navigate(routes[userType]);
-    } else {
-      toast.error("Invalid OTP. Please try again.");
+
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error.response?.data?.detail || "Invalid OTP");
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -56,7 +94,7 @@ const Auth = () => {
           <p className="text-muted-foreground">Sign in to continue</p>
         </div>
 
-        <Tabs defaultValue="login" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="login">Login</TabsTrigger>
             <TabsTrigger value="signup">Sign Up</TabsTrigger>
@@ -66,61 +104,24 @@ const Auth = () => {
             <Card>
               <CardHeader>
                 <CardTitle>Welcome Back</CardTitle>
-                <CardDescription>Enter your details to access your account</CardDescription>
+                <CardDescription>Enter your phone to login</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={isOtpSent ? handleVerifyOtp : handleSendOtp} className="space-y-4">
                   {!isOtpSent ? (
                     <>
                       <div className="space-y-2">
-                        <Label>I am a</Label>
-                        <Select value={userType} onValueChange={(value: any) => setUserType(value)}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="donor">Donor</SelectItem>
-                            <SelectItem value="orphanage">Orphanage</SelectItem>
-                            <SelectItem value="volunteer">Volunteer</SelectItem>
-                            <SelectItem value="admin">Admin</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>Contact Method</Label>
-                        <Select value={contactMethod} onValueChange={(value: any) => setContactMethod(value)}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="email">
-                              <div className="flex items-center">
-                                <Mail className="mr-2 w-4 h-4" /> Email
-                              </div>
-                            </SelectItem>
-                            <SelectItem value="phone">
-                              <div className="flex items-center">
-                                <Phone className="mr-2 w-4 h-4" /> Phone
-                              </div>
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label>{contactMethod === "email" ? "Email Address" : "Phone Number"}</Label>
+                        <Label>Phone Number</Label>
                         <Input
-                          type={contactMethod === "email" ? "email" : "tel"}
-                          placeholder={contactMethod === "email" ? "your@email.com" : "+91 1234567890"}
+                          type="tel"
+                          placeholder="9876543210"
                           value={contact}
                           onChange={(e) => setContact(e.target.value)}
                           required
                         />
                       </div>
-
-                      <Button type="submit" className="w-full">
-                        Send OTP
+                      <Button type="submit" className="w-full" disabled={isLoading}>
+                        {isLoading ? "Sending..." : "Send OTP"}
                       </Button>
                     </>
                   ) : (
@@ -129,28 +130,17 @@ const Auth = () => {
                         <Label>Enter OTP</Label>
                         <Input
                           type="text"
-                          placeholder="Enter 6-digit OTP"
-                          maxLength={6}
+                          placeholder="Enter OTP"
                           value={otp}
                           onChange={(e) => setOtp(e.target.value)}
                           required
                         />
-                        <p className="text-sm text-muted-foreground">
-                          OTP sent to {contact}
-                        </p>
                       </div>
-
-                      <Button type="submit" className="w-full">
-                        Verify & Login
+                      <Button type="submit" className="w-full" disabled={isLoading}>
+                        {isLoading ? "Verifying..." : "Verify & Login"}
                       </Button>
-
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => setIsOtpSent(false)}
-                      >
-                        Change Contact
+                      <Button variant="outline" className="w-full" onClick={() => setIsOtpSent(false)}>
+                        Change Number
                       </Button>
                     </>
                   )}
@@ -163,7 +153,7 @@ const Auth = () => {
             <Card>
               <CardHeader>
                 <CardTitle>Create Account</CardTitle>
-                <CardDescription>Register to start making a difference</CardDescription>
+                <CardDescription>Register as a new user</CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={isOtpSent ? handleVerifyOtp : handleSendOtp} className="space-y-4">
@@ -172,99 +162,34 @@ const Auth = () => {
                       <div className="space-y-2">
                         <Label>I am a</Label>
                         <Select value={userType} onValueChange={(value: any) => setUserType(value)}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="donor">Donor</SelectItem>
-                            <SelectItem value="orphanage">Orphanage (Requires Admin Approval)</SelectItem>
+                            <SelectItem value="orphanage">Orphanage</SelectItem>
                             <SelectItem value="volunteer">Volunteer</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
-
                       <div className="space-y-2">
-                        <Label>Full Name / Organization Name</Label>
-                        <Input type="text" placeholder="Enter your name" required />
+                        <Label>Full Name</Label>
+                        <Input placeholder="Your Name" value={fullName} onChange={(e) => setFullName(e.target.value)} required />
                       </div>
-
-                      {userType === "donor" && (
-                        <div className="space-y-2">
-                          <Label>Aadhaar Number</Label>
-                          <Input 
-                            type="text" 
-                            placeholder="Enter 12-digit Aadhaar number" 
-                            maxLength={12}
-                            pattern="[0-9]{12}"
-                            required 
-                          />
-                        </div>
-                      )}
-
                       <div className="space-y-2">
-                        <Label>Contact Method</Label>
-                        <Select value={contactMethod} onValueChange={(value: any) => setContactMethod(value)}>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="email">
-                              <div className="flex items-center">
-                                <Mail className="mr-2 w-4 h-4" /> Email
-                              </div>
-                            </SelectItem>
-                            <SelectItem value="phone">
-                              <div className="flex items-center">
-                                <Phone className="mr-2 w-4 h-4" /> Phone
-                              </div>
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
+                        <Label>Phone Number</Label>
+                        <Input type="tel" placeholder="9876543210" value={contact} onChange={(e) => setContact(e.target.value)} required />
                       </div>
-
-                      <div className="space-y-2">
-                        <Label>{contactMethod === "email" ? "Email Address" : "Phone Number"}</Label>
-                        <Input
-                          type={contactMethod === "email" ? "email" : "tel"}
-                          placeholder={contactMethod === "email" ? "your@email.com" : "+91 1234567890"}
-                          value={contact}
-                          onChange={(e) => setContact(e.target.value)}
-                          required
-                        />
-                      </div>
-
-                      <Button type="submit" className="w-full">
-                        Send OTP
+                      <Button type="submit" className="w-full" disabled={isLoading}>
+                        {isLoading ? "Sending..." : "Send OTP"}
                       </Button>
                     </>
                   ) : (
                     <>
                       <div className="space-y-2">
                         <Label>Enter OTP</Label>
-                        <Input
-                          type="text"
-                          placeholder="Enter 6-digit OTP"
-                          maxLength={6}
-                          value={otp}
-                          onChange={(e) => setOtp(e.target.value)}
-                          required
-                        />
-                        <p className="text-sm text-muted-foreground">
-                          OTP sent to {contact}
-                        </p>
+                        <Input placeholder="Enter OTP" value={otp} onChange={(e) => setOtp(e.target.value)} required />
                       </div>
-
-                      <Button type="submit" className="w-full">
-                        Verify & Sign Up
-                      </Button>
-
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full"
-                        onClick={() => setIsOtpSent(false)}
-                      >
-                        Change Details
+                      <Button type="submit" className="w-full" disabled={isLoading}>
+                        {isLoading ? "Verifying..." : "Verify & Sign Up"}
                       </Button>
                     </>
                   )}
