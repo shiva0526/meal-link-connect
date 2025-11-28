@@ -30,4 +30,11 @@ async def claim_donation(donation_id: str, user = Depends(require_roles("volunte
     db.add(donation)
     await db.commit()
     await db.refresh(donation)
+    await db.refresh(donation)
     return donation
+
+@router.get("/my-deliveries", response_model=list[schemas.DonationOut])
+async def my_deliveries(user = Depends(require_roles("volunteer")), db: AsyncSession = Depends(get_db)):
+    q = select(models.Donation).where(models.Donation.assigned_volunteer_id == user.id, models.Donation.status == "in_transit")
+    r = await db.execute(q)
+    return r.scalars().all()

@@ -30,13 +30,30 @@ async def my_donations(user = Depends(require_roles("donor")), db: AsyncSession 
     r = await db.execute(q)
     return r.scalars().all()
 
+@router.get("/pending", response_model=list[schemas.DonationOut])
+async def all_pending_donations(user = Depends(require_roles("admin")), db: AsyncSession = Depends(get_db)):
+    q = select(models.Donation).where(models.Donation.status == "pending")
+    r = await db.execute(q)
+    return r.scalars().all()
+
 @router.patch("/{donation_id}/decision", response_model=schemas.DonationOut)
-async def orphan_decision(donation_id: str, payload: schemas.DonationDecisionIn, user = Depends(require_roles("orphanage")), db: AsyncSession = Depends(get_db)):
+async def orphan_decision(donation_id: str, payload: schemas.DonationDecisionIn, user = Depends(require_roles("orphanage", "admin")), db: AsyncSession = Depends(get_db)):
     q = select(models.Donation).where(models.Donation.id == donation_id)
     r = await db.execute(q)
     donation = r.scalars().first()
     if not donation:
         raise HTTPException(status_code=404, detail="Donation not found")
+    
+    # If donation is assigned to a specific orphanage, only that orphanage can approve
+    if donation.orphanage_id:
+        # Check if current user is the owner of this orphanage
+        q_org = select(models.Orphanage).where(models.Orphanage.id == donation.orphanage_id)
+        r_org = await db.execute(q_org)
+        target_org = r_org.scalars().first()
+        
+        if not target_org or target_org.user_id != user.id:
+             raise HTTPException(status_code=403, detail="Only the selected orphanage can approve this donation")
+    
     donation.status = "approved" if payload.approve else "rejected"
     db.add(donation)
     await db.commit()

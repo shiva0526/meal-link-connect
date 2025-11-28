@@ -3,34 +3,37 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Heart, Package, Calendar, History, MapPin, LogOut, CheckCircle, XCircle, Clock } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
 import { ScheduleEventDialog } from "@/components/ScheduleEventDialog";
 import { format } from "date-fns";
+import usersApi from "@/api/users";
+import donationsApi from "@/api/donations";
 
 const DonorDashboard = () => {
   const navigate = useNavigate();
-  const [donorName] = useState("John Doe");
+  const [donorName, setDonorName] = useState("");
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [events, setEvents] = useState<any[]>([]);
+  const [donations, setDonations] = useState<any[]>([]);
 
-  const loadEvents = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+  const loadData = async () => {
+    try {
+      // Load User Profile
+      const user = await usersApi.getMe();
+      setDonorName(user.full_name || "Donor");
 
-    const { data } = await supabase
-      .from("events")
-      .select(`
-        *,
-        orphanages (name)
-      `)
-      .eq("donor_id", user.id)
-      .order("created_at", { ascending: false });
-    
-    if (data) setEvents(data);
+      // Load Donations
+      const myDonations = await donationsApi.myDonations();
+      setDonations(myDonations);
+
+      // Events not fully implemented in backend yet, keeping empty or placeholder
+      setEvents([]);
+    } catch (err) {
+      console.error("Failed to load donor data", err);
+    }
   };
 
   useEffect(() => {
-    loadEvents();
+    loadData();
   }, []);
 
   const getStatusIcon = (status: string) => {
@@ -81,7 +84,7 @@ const DonorDashboard = () => {
               <CardDescription>Donate food, clothes, furniture, or money to orphanages in need</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button className="w-full">Start Donating</Button>
+              <Button className="w-full" onClick={() => navigate("/donate")}>Start Donating</Button>
             </CardContent>
           </Card>
 
@@ -120,10 +123,47 @@ const DonorDashboard = () => {
               <CardDescription>Track your past donations and their impact</CardDescription>
             </CardHeader>
             <CardContent>
-              <Button variant="outline" className="w-full">View History</Button>
+              <Button variant="outline" className="w-full" onClick={() => {
+                const element = document.getElementById('donation-history');
+                element?.scrollIntoView({ behavior: 'smooth' });
+              }}>View History</Button>
             </CardContent>
           </Card>
         </div>
+
+        <Card id="donation-history" className="mb-8">
+          <CardHeader>
+            <CardTitle>Donation History</CardTitle>
+            <CardDescription>Your past contributions</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {donations.length === 0 ? (
+              <p className="text-center text-muted-foreground py-8">No donations yet</p>
+            ) : (
+              <div className="space-y-4">
+                {donations.map((donation) => (
+                  <div key={donation.id} className="flex items-center justify-between p-4 bg-muted/50 rounded-lg">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 bg-primary/10 rounded-full flex items-center justify-center">
+                        <Package className="w-5 h-5 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium">{donation.donation_type} Donation</p>
+                        <p className="text-sm text-muted-foreground">
+                          {format(new Date(donation.created_at), "PPP")}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {getStatusIcon(donation.status)}
+                      <span className="text-sm text-muted-foreground">{getStatusText(donation.status)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <Card>
           <CardHeader>
@@ -163,7 +203,7 @@ const DonorDashboard = () => {
       <ScheduleEventDialog
         open={scheduleDialogOpen}
         onOpenChange={setScheduleDialogOpen}
-        onEventScheduled={loadEvents}
+        onEventScheduled={loadData}
       />
     </div>
   );

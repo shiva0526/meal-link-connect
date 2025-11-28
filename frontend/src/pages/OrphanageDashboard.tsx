@@ -3,9 +3,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Heart, Package, LogOut, Calendar, CheckCircle, XCircle, Edit } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
-import { toast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 import { format } from "date-fns";
+import orphanagesApi from "@/api/orphanages";
+import donationsApi from "@/api/donations";
+import usersApi from "@/api/users";
 
 const OrphanageDashboard = () => {
   const navigate = useNavigate();
@@ -14,49 +16,17 @@ const OrphanageDashboard = () => {
   const [events, setEvents] = useState<any[]>([]);
 
   const loadDonations = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data: orphanageData } = await supabase
-      .from("orphanages")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (orphanageData) {
-      const { data } = await supabase
-        .from("donations")
-        .select("*")
-        .eq("orphanage_id", orphanageData.id)
-        .eq("status", "pending");
-      
-      if (data) setDonations(data);
+    try {
+      const data = await orphanagesApi.getMyPending();
+      setDonations(data);
+    } catch (err) {
+      console.error("Failed to load donations", err);
     }
   };
 
   const loadEvents = async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    const { data: orphanageData } = await supabase
-      .from("orphanages")
-      .select("id")
-      .eq("user_id", user.id)
-      .single();
-
-    if (orphanageData) {
-      const { data } = await supabase
-        .from("events")
-        .select(`
-          *,
-          profiles (full_name)
-        `)
-        .eq("orphanage_id", orphanageData.id)
-        .eq("status", "pending")
-        .order("event_date", { ascending: true });
-      
-      if (data) setEvents(data);
-    }
+    // Events not yet implemented in backend
+    setEvents([]);
   };
 
   useEffect(() => {
@@ -65,87 +35,33 @@ const OrphanageDashboard = () => {
   }, []);
 
   const handleAccept = async (id: string) => {
-    const { error } = await supabase
-      .from("donations")
-      .update({ status: "approved" })
-      .eq("id", id);
-
-    if (error) {
-      toast({
-        title: "Error",
-        description: "Failed to accept donation",
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Success",
-        description: "Donation accepted successfully",
-      });
+    try {
+      await donationsApi.decision(id, true);
+      toast.success("Donation accepted successfully");
       loadDonations();
+    } catch (err) {
+      console.error("Accept error", err);
+      toast.error("Failed to accept donation");
     }
   };
 
   const handleDecline = async (id: string) => {
-    const { error } = await supabase
-      .from("donations")
-      .update({ status: "rejected" })
-      .eq("id", id);
-
-    if (error) {
-      toast({
-        title: "Error",
-        description: "Failed to decline donation",
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Success",
-        description: "Donation declined",
-      });
+    try {
+      await donationsApi.decision(id, false);
+      toast.success("Donation declined");
       loadDonations();
+    } catch (err) {
+      console.error("Decline error", err);
+      toast.error("Failed to decline donation");
     }
   };
 
   const handleApproveEvent = async (id: string) => {
-    const { error } = await supabase
-      .from("events")
-      .update({ status: "approved" })
-      .eq("id", id);
-
-    if (error) {
-      toast({
-        title: "Error",
-        description: "Failed to approve event",
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Success",
-        description: "Event approved successfully",
-      });
-      loadEvents();
-    }
+    // Not implemented
   };
 
   const handleRejectEvent = async (id: string) => {
-    const { error } = await supabase
-      .from("events")
-      .update({ status: "rejected" })
-      .eq("id", id);
-
-    if (error) {
-      toast({
-        title: "Error",
-        description: "Failed to reject event",
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Success",
-        description: "Event rejected",
-      });
-      loadEvents();
-    }
+    // Not implemented
   };
 
   return (
@@ -190,7 +106,7 @@ const OrphanageDashboard = () => {
                       <div>
                         <p className="font-medium">{donation.donation_type} Donation</p>
                         <p className="text-sm text-muted-foreground">
-                          {donation.quantity && `Quantity: ${donation.quantity}`}
+                          {donation.details && JSON.stringify(donation.details)}
                           {donation.delivery_method && ` • ${donation.delivery_method}`}
                         </p>
                       </div>
@@ -292,13 +208,10 @@ const OrphanageDashboard = () => {
                   <span className="font-semibold">30 sets</span>
                 </div>
               </div>
-              <Button 
-                className="w-full mt-4" 
+              <Button
+                className="w-full mt-4"
                 variant="outline"
-                onClick={() => toast({
-                  title: "Coming Soon",
-                  description: "Requirements editor will be available soon",
-                })}
+                onClick={() => toast.info("Requirements editor will be available soon")}
               >
                 <Edit className="w-4 h-4 mr-2" /> Update Requirements
               </Button>

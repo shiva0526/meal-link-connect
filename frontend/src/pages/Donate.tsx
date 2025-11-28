@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -10,22 +10,111 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Heart, ArrowLeft, Package, Shirt, Sofa, DollarSign } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
+import donationsApi from "@/api/donations";
+import usersApi from "@/api/users";
+import orphanagesApi, { OrphanageOut } from "@/api/orphanages";
 
 const Donate = () => {
   const navigate = useNavigate();
   const [donationType, setDonationType] = useState<"food" | "money" | "clothes" | "furniture">("food");
   const [deliveryMethod, setDeliveryMethod] = useState<"self" | "pickup">("self");
   const [termsAccepted, setTermsAccepted] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Form fields
+  const [mealsCount, setMealsCount] = useState<number | "">("");
+  const [foodType, setFoodType] = useState<string>("");
+  const [amount, setAmount] = useState<number | "">("");
+  const [paymentMethod, setPaymentMethod] = useState<string>("");
+  const [quantity, setQuantity] = useState<number | "">("");
+  const [clothingType, setClothingType] = useState<string>("");
+  const [clothingCondition, setClothingCondition] = useState<string>("");
+  const [itemDescription, setItemDescription] = useState<string>("");
+  const [itemQuantity, setItemQuantity] = useState<number | "">("");
+  const [itemCondition, setItemCondition] = useState<string>("");
+  const [pickupAddress, setPickupAddress] = useState<string>("");
+  const [pickupDate, setPickupDate] = useState<string>("");
+  const [additionalNotes, setAdditionalNotes] = useState<string>("");
+  const [selectedOrphanage, setSelectedOrphanage] = useState<string>("");
+  const [orphanages, setOrphanages] = useState<OrphanageOut[]>([]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!termsAccepted) {
       toast.error("Please accept the terms and conditions");
       return;
     }
-    toast.success("Donation submitted successfully! An admin will review your request.");
-    navigate("/donor-dashboard");
+
+    if (!currentUserId) {
+      toast.error("You must be logged in to submit a donation.");
+      navigate("/auth");
+      return;
+    }
+
+    // Build details object depending on donation type
+    const details: Record<string, any> = {};
+    if (donationType === "food") {
+      details.meals_count = mealsCount || null;
+      details.food_type = foodType || null;
+    } else if (donationType === "money") {
+      details.amount = amount || null;
+      details.payment_method = paymentMethod || null;
+    } else if (donationType === "clothes") {
+      details.quantity = quantity || null;
+      details.clothing_type = clothingType || null;
+      details.condition = clothingCondition || null;
+    } else if (donationType === "furniture") {
+      details.item_description = itemDescription || null;
+      details.quantity = itemQuantity || null;
+      details.condition = itemCondition || null;
+    }
+    if (deliveryMethod === "pickup") {
+      details.pickup_address = pickupAddress || null;
+      details.pickup_date = pickupDate || null;
+    }
+    if (additionalNotes) details.notes = additionalNotes;
+
+    const payload = {
+      donor_id: currentUserId,
+      donation_type: donationType,
+      details: Object.keys(details).length ? details : null,
+      delivery_method: deliveryMethod,
+      orphanage_id: selectedOrphanage || null,
+    };
+
+    try {
+      await donationsApi.create(payload as any);
+      toast.success("Donation submitted successfully! An admin will review your request.");
+      navigate("/donor-dashboard");
+    } catch (err: any) {
+      console.error("Submit donation error:", err);
+      const msg = err.response?.data?.detail || "Failed to submit donation. Is backend running?";
+      toast.error(msg);
+    }
   };
+
+  useEffect(() => {
+    const loadMe = async () => {
+      try {
+        const me = await usersApi.getMe();
+        setCurrentUserId(me.id);
+      } catch (err) {
+        // Not logged in or failed to fetch
+        setCurrentUserId(null);
+      }
+    };
+    loadMe();
+
+    const loadOrphanages = async () => {
+      try {
+        const data = await orphanagesApi.getAll();
+        setOrphanages(data);
+      } catch (err) {
+        console.error("Failed to load orphanages", err);
+      }
+    };
+    loadOrphanages();
+  }, []);
 
   const donationIcons = {
     food: Package,
@@ -122,11 +211,11 @@ const Donate = () => {
                 <>
                   <div className="space-y-2">
                     <Label>Number of Meals</Label>
-                    <Input type="number" placeholder="e.g., 50" required />
+                    <Input value={mealsCount} onChange={(e) => setMealsCount(Number(e.target.value))} type="number" placeholder="e.g., 50" required />
                   </div>
                   <div className="space-y-2">
                     <Label>Food Type</Label>
-                    <Input placeholder="e.g., Cooked meals, Dry rations, Fresh produce" required />
+                    <Input value={foodType} onChange={(e) => setFoodType(e.target.value)} placeholder="e.g., Cooked meals, Dry rations, Fresh produce" required />
                   </div>
                 </>
               )}
@@ -135,11 +224,11 @@ const Donate = () => {
                 <>
                   <div className="space-y-2">
                     <Label>Amount (₹)</Label>
-                    <Input type="number" placeholder="Enter amount" required />
+                    <Input value={amount} onChange={(e) => setAmount(Number(e.target.value))} type="number" placeholder="Enter amount" required />
                   </div>
                   <div className="space-y-2">
                     <Label>Payment Method</Label>
-                    <Select required>
+                    <Select required value={paymentMethod} onValueChange={(v: any) => setPaymentMethod(v)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select payment method" />
                       </SelectTrigger>
@@ -158,15 +247,15 @@ const Donate = () => {
                 <>
                   <div className="space-y-2">
                     <Label>Quantity</Label>
-                    <Input type="number" placeholder="Number of items" required />
+                    <Input value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} type="number" placeholder="Number of items" required />
                   </div>
                   <div className="space-y-2">
                     <Label>Clothing Type</Label>
-                    <Input placeholder="e.g., Children's wear, Winter clothes" required />
+                    <Input value={clothingType} onChange={(e) => setClothingType(e.target.value)} placeholder="e.g., Children's wear, Winter clothes" required />
                   </div>
                   <div className="space-y-2">
                     <Label>Condition</Label>
-                    <Select required>
+                    <Select required value={clothingCondition} onValueChange={(v: any) => setClothingCondition(v)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select condition" />
                       </SelectTrigger>
@@ -184,15 +273,15 @@ const Donate = () => {
                 <>
                   <div className="space-y-2">
                     <Label>Item Description</Label>
-                    <Input placeholder="e.g., Bed, Table, Chairs" required />
+                    <Input value={itemDescription} onChange={(e) => setItemDescription(e.target.value)} placeholder="e.g., Bed, Table, Chairs" required />
                   </div>
                   <div className="space-y-2">
                     <Label>Quantity</Label>
-                    <Input type="number" placeholder="Number of items" required />
+                    <Input value={itemQuantity} onChange={(e) => setItemQuantity(Number(e.target.value))} type="number" placeholder="Number of items" required />
                   </div>
                   <div className="space-y-2">
                     <Label>Condition</Label>
-                    <Select required>
+                    <Select required value={itemCondition} onValueChange={(v: any) => setItemCondition(v)}>
                       <SelectTrigger>
                         <SelectValue placeholder="Select condition" />
                       </SelectTrigger>
@@ -208,7 +297,7 @@ const Donate = () => {
 
               <div className="space-y-2">
                 <Label>Additional Notes</Label>
-                <Textarea placeholder="Any special instructions or details" />
+                <Textarea value={additionalNotes} onChange={(e) => setAdditionalNotes(e.target.value)} placeholder="Any special instructions or details" />
               </div>
             </CardContent>
           </Card>
@@ -240,11 +329,11 @@ const Donate = () => {
                   <div className="mt-4 space-y-4">
                     <div className="space-y-2">
                       <Label>Pickup Address</Label>
-                      <Textarea placeholder="Enter your complete address" required />
+                      <Textarea value={pickupAddress} onChange={(e) => setPickupAddress(e.target.value)} placeholder="Enter your complete address" required />
                     </div>
                     <div className="space-y-2">
                       <Label>Preferred Pickup Date</Label>
-                      <Input type="date" required />
+                      <Input value={pickupDate} onChange={(e) => setPickupDate(e.target.value)} type="date" required />
                     </div>
                   </div>
                 )}
@@ -257,14 +346,16 @@ const Donate = () => {
               <CardTitle>Select Orphanage</CardTitle>
             </CardHeader>
             <CardContent>
-              <Select required>
+              <Select required value={selectedOrphanage} onValueChange={(v: any) => setSelectedOrphanage(v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose an orphanage" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="sunshine">Sunshine Orphanage (3.5 km away)</SelectItem>
-                  <SelectItem value="hope">Hope Children's Home (5.2 km away)</SelectItem>
-                  <SelectItem value="new-hope">New Hope Center (7.8 km away)</SelectItem>
+                  {orphanages.map((org) => (
+                    <SelectItem key={org.id} value={org.id}>
+                      {org.name} ({org.address})
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </CardContent>

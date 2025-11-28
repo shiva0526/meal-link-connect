@@ -7,12 +7,14 @@ from app.models import RoleEnum, DonationType, DonationStatus
 # Auth
 class RequestOTPIn(BaseModel):
     phone: str
+    is_login: bool = True
 
 class VerifyOTPIn(BaseModel):
     phone: str
     otp: str
     full_name: Optional[str] = None
     role: Optional[RoleEnum] = None  # allow role selection at onboarding
+    orphanage_details: Optional[Dict[str, Any]] = None
 
 class TokenOut(BaseModel):
     access_token: str
